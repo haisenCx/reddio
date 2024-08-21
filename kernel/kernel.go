@@ -67,10 +67,6 @@ func (k *Kernel) Execute(block *types.Block) error {
 	return k.kernel.PostExecute(block, receipts)
 }
 
-const (
-	maxConcurrency = 4
-)
-
 func (k *Kernel) SplitTxnCtxList(list []*txnCtx) [][]*txnCtx {
 	cur := 0
 	curList := make([]*txnCtx, 0)
@@ -83,7 +79,7 @@ func (k *Kernel) SplitTxnCtxList(list []*txnCtx) [][]*txnCtx {
 			continue
 		}
 		curList = append(curList, curTxnCtx)
-		if len(curList) >= maxConcurrency {
+		if len(curList) >= config.GetGlobalConfig().Concurrency {
 			got = append(got, curList)
 			curList = make([]*txnCtx, 0)
 		}

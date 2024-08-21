@@ -22,17 +22,19 @@ import (
 var (
 	configPath    string
 	evmConfigPath string
-	maxBlock      int
 	qps           int
 	isParallel    bool
+	concurrency   int
+	duration      time.Duration
 )
 
 func init() {
 	flag.StringVar(&configPath, "configPath", "", "")
 	flag.StringVar(&evmConfigPath, "evmConfigPath", "./conf/evm_cfg.toml", "")
-	flag.IntVar(&maxBlock, "maxBlock", 50, "")
 	flag.IntVar(&qps, "qps", 1500, "")
 	flag.BoolVar(&isParallel, "parallel", true, "")
+	flag.IntVar(&concurrency, "concurrency", 16, "")
+	flag.DurationVar(&duration, "duration", 30*time.Second, "")
 }
 
 func main() {
@@ -45,6 +47,7 @@ func main() {
 	evmConfig := evm.LoadEvmConfig(evmConfigPath)
 	config := config2.GetGlobalConfig()
 	config.IsParallel = isParallel
+	config.Concurrency = concurrency
 	go func() {
 		if config.IsParallel {
 			log.Println("start reddio in parallel")
@@ -55,7 +58,7 @@ func main() {
 		log.Println("exit reddio")
 	}()
 	time.Sleep(3 * time.Second)
-	totalCount, err := blockBenchmark(evmConfig, maxBlock, qps)
+	totalCount, err := blockBenchmark(duration, evmConfig, qps)
 	if err != nil {
 		log.Println(err.Error())
 		os.Exit(1)
@@ -64,36 +67,41 @@ func main() {
 	os.Exit(0)
 }
 
-func blockBenchmark(evmCfg *evm.GethConfig, target int, qps int) (int, error) {
+func blockBenchmark(duration time.Duration, evmCfg *evm.GethConfig, qps int) (int, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	bm := pkg.GetDefaultBlockManager()
 	ethManager := &transfer.EthManager{}
 	cfg := conf.Config.EthCaseConf
 	ethManager.Configure(cfg, evmCfg)
-	wallets, err := ethManager.PreCreateWallets(100, cfg.InitialEthCount)
+	wallets, err := ethManager.PreCreateWallets(1000, cfg.InitialEthCount)
 	if err != nil {
 		return 0, err
 	}
 	limiter := rate.NewLimiter(rate.Limit(qps), qps)
-	ethManager.AddTestCase(transfer.NewRandomBenchmarkTest("[rand_test 100 account, 5000 transfer]", 100, cfg.InitialEthCount, 5000, wallets, limiter))
+	ethManager.AddTestCase(transfer.NewRandomBenchmarkTest("[rand_test 1000 account, 5000 transfer]", 1000, cfg.InitialEthCount, 5000, wallets, limiter))
 	go runBenchmark(ctx, ethManager)
+	after := time.After(duration)
 	totalCount := 0
-	for i := 1; i <= target; {
-		finish, txnCount, err := bm.GetBlockTxnCountByIndex(i)
-		if err != nil {
-			log.Println(fmt.Sprintf("GetBlockTxnCountByIndex Err:%v", err))
-			continue
+	index := 1
+	for {
+		select {
+		case <-after:
+			return totalCount, nil
+		default:
+			finish, txnCount, err := bm.GetBlockTxnCountByIndex(index)
+			if err != nil {
+				log.Println(fmt.Sprintf("GetBlockTxnCountByIndex Err:%v", err))
+				continue
+			}
+			if finish {
+				index++
+				totalCount += txnCount
+				continue
+			}
+			time.Sleep(time.Second)
 		}
-		if finish {
-			i++
-			totalCount += txnCount
-			continue
-		}
-		time.Sleep(3 * time.Second)
 	}
-	bm.StopBlockChain()
-	return totalCount, nil
 }
 
 func runBenchmark(ctx context.Context, manager *transfer.EthManager) {

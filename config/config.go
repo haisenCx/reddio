@@ -1,12 +1,14 @@
 package config
 
 type Config struct {
-	IsParallel bool
+	IsParallel  bool
+	Concurrency int
 }
 
 func defaultConfig() *Config {
 	return &Config{
-		IsParallel: true,
+		IsParallel:  true,
+		Concurrency: 16,
 	}
 }
 

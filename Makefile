@@ -22,10 +22,10 @@ benchmark_test: reset
 	go run ./test/cmd/benchmark/main.go
 
 parallel_benchmark_test: reset
-	./benchmark_test --parallel=true --maxBlock=30 --qps=600
+	./benchmark_test --parallel=true --qps=600 --concurrency=16 --duration=5m
 
 serial_benchmark_test: reset
-	./benchmark_test --parallel=false --maxBlock=30 --qps=600
+	./benchmark_test --parallel=false --qps=600 --duration=5m
 
 build_benchmark_test: reset
 	go build -v -o benchmark_test ./test/cmd/benchmark/main.go
